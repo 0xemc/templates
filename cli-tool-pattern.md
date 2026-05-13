@@ -1,12 +1,12 @@
 # CLI Tool Architecture Pattern
 
-A battle-tested pattern for building TypeScript CLI tools using Commander.js with modular command registration, OAuth2 authentication, and consistent handler conventions.
+A battle-tested pattern for building TypeScript CLI tools using Commander.js with modular command registration, optional authentication, and consistent handler conventions.
 
 ---
 
 ## Core Idea
 
-Commands are organized as **domain modules** that each export a registration function. A single entry point creates the CLI program and delegates to each module. Every handler follows the same structure: auth guard, API call, formatted output, error handling.
+Commands are organized as **domain modules** that each export a registration function. A single entry point creates the CLI program and delegates to each module. Every handler follows the same structure: guard checks, service call, formatted output, error handling.
 
 ---
 
@@ -19,22 +19,20 @@ flowchart TD
     end
 
     subgraph MODULES["src/commands/ · domain modules"]
-        V["videos.ts"]
-        C["channels.ts"]
-        P["playlists.ts"]
-        L["live.ts"]
-        V -. "registerVideoCommands(program)" .-> E
-        C -. "registerChannelCommands(program)" .-> E
-        P -. "registerPlaylistCommands(program)" .-> E
-        L -. "registerLiveCommands(program)" .-> E
+        M1["resource-a.ts"]
+        M2["resource-b.ts"]
+        M3["resource-c.ts"]
+        M1 -. "registerResourceACommands(program)" .-> E
+        M2 -. "registerResourceBCommands(program)" .-> E
+        M3 -. "registerResourceCCommands(program)" .-> E
     end
 
-    subgraph AUTH["src/auth.ts · authentication"]
-        A["getOAuth2Client()\nisAuthenticated()\nrequireAuth()"]
+    subgraph AUTH["src/auth.ts · authentication (optional)"]
+        A["getClient()\nisAuthenticated()\nrequireAuth()"]
     end
 
     subgraph HANDLER["handler pattern"]
-        H["requireAuth() → API call → format output → catch error"]
+        H["requireAuth() → service call → format output → catch error"]
     end
 
     E --> MODULES
@@ -55,15 +53,11 @@ flowchart TD
 project/
 ├── src/
 │   ├── index.ts              # Entry point — creates program, registers modules
-│   ├── auth.ts               # OAuth2 module (also standalone: npm run auth)
+│   ├── auth.ts               # Auth module (optional, also standalone script)
 │   └── commands/
-│       ├── videos.ts         # videos, thumbnails, captions, video-categories
-│       ├── channels.ts       # channels, channel-sections
-│       ├── playlists.ts      # playlists, playlist-items
-│       ├── comments.ts       # comment-threads, comments
-│       ├── subscriptions.ts  # subscriptions
-│       ├── live.ts           # live broadcasts, streams, chat, moderators, bans
-│       └── activities.ts     # activities, i18n, members, super-chat
+│       ├── resource-a.ts     # resource-a, resource-a-sub commands
+│       ├── resource-b.ts     # resource-b, resource-b-sub commands
+│       └── resource-c.ts     # resource-c commands
 ├── tests/
 │   ├── setup.ts              # Global test setup (mocks process.exit)
 │   ├── helpers.ts            # Test utilities (captureOutput, makeProgram)
@@ -73,8 +67,7 @@ project/
 ├── tsconfig.json
 ├── vitest.config.ts
 ├── .env.example
-├── .gitignore
-└── AGENT_SKILL.md            # Optional: AI agent usage reference
+└── .gitignore
 ```
 
 ---
@@ -85,15 +78,15 @@ project/
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
-import { registerVideoCommands } from './commands/videos.js';
-import { registerChannelCommands } from './commands/channels.js';
+import { registerResourceACommands } from './commands/resource-a.js';
+import { registerResourceBCommands } from './commands/resource-b.js';
 // ... more imports
 
 const program = new Command();
-program.name('youtube').description('CLI for the YouTube Data API v3').version('0.1.0');
+program.name('mycli').description('CLI for managing resources').version('0.1.0');
 
-registerVideoCommands(program);
-registerChannelCommands(program);
+registerResourceACommands(program);
+registerResourceBCommands(program);
 // ... more registrations
 
 program.parse();
@@ -109,43 +102,42 @@ Every command file follows the same structure:
 
 ```typescript
 import { Command } from 'commander';
-import { google } from 'googleapis';
 import chalk from 'chalk';
-import { getOAuth2Client, requireAuth } from '../auth.js';
+import { requireAuth } from '../auth.js';
+import { createClient } from '../client.js';
 
-// 1. API client factory
-function yt() {
-  return google.youtube({ version: 'v3', auth: getOAuth2Client() });
+// 1. Client factory
+function client() {
+  return createClient();
 }
 
 // 2. Output formatters
-function printVideo(video: any) {
-  console.log(chalk.bold(video.snippet.title));
-  console.log(chalk.cyan(video.id));
-  console.log(chalk.dim(video.snippet.publishedAt));
+function printItem(item: any) {
+  console.log(chalk.bold(item.name));
+  console.log(chalk.cyan(item.id));
+  console.log(chalk.dim(item.createdAt));
 }
 
 // 3. Registration function
-export function registerVideoCommands(program: Command) {
-  const cmd = program.command('videos').description('Manage YouTube videos');
+export function registerResourceACommands(program: Command) {
+  const cmd = program.command('items').description('Manage items');
 
   cmd.command('search <query>')
-    .description('Search for videos')
+    .description('Search for items')
     .option('--max-results <n>', 'Max results', '10')
     .option('--json', 'Output as JSON')
     .action(async (query, opts) => {
       requireAuth();
       try {
-        const res = await yt().search.list({
-          part: ['snippet'],
+        const res = await client().items.search({
           q: query,
-          maxResults: parseInt(opts.maxResults),
+          limit: parseInt(opts.maxResults),
         });
         if (opts.json) {
-          console.log(JSON.stringify(res.data, null, 2));
+          console.log(JSON.stringify(res, null, 2));
           return;
         }
-        res.data.items?.forEach(printVideo);
+        res.items?.forEach(printItem);
       } catch (err: any) {
         console.error(chalk.red('Error:'), err.message);
         process.exit(1);
@@ -153,20 +145,17 @@ export function registerVideoCommands(program: Command) {
     });
 
   cmd.command('get <id>')
-    .description('Get video by ID')
+    .description('Get item by ID')
     .option('--json', 'Output as JSON')
     .action(async (id, opts) => {
       requireAuth();
       try {
-        const res = await yt().videos.list({
-          part: ['snippet', 'contentDetails', 'statistics'],
-          id: [id],
-        });
+        const res = await client().items.get({ id });
         if (opts.json) {
-          console.log(JSON.stringify(res.data, null, 2));
+          console.log(JSON.stringify(res, null, 2));
           return;
         }
-        res.data.items?.forEach(printVideo);
+        printItem(res);
       } catch (err: any) {
         console.error(chalk.red('Error:'), err.message);
         process.exit(1);
@@ -175,7 +164,7 @@ export function registerVideoCommands(program: Command) {
 
   // Destructive commands include --yes flag
   cmd.command('delete <id>')
-    .description('Delete a video')
+    .description('Delete an item')
     .option('--yes', 'Skip confirmation')
     .action(async (id, opts) => {
       requireAuth();
@@ -184,8 +173,8 @@ export function registerVideoCommands(program: Command) {
         if (confirm.toLowerCase() !== 'y') return;
       }
       try {
-        await yt().videos.delete({ id });
-        console.log(chalk.green('Video deleted'));
+        await client().items.delete({ id });
+        console.log(chalk.green('Item deleted'));
       } catch (err: any) {
         console.error(chalk.red('Error:'), err.message);
         process.exit(1);
@@ -193,10 +182,10 @@ export function registerVideoCommands(program: Command) {
     });
 
   // Sub-resources registered as sibling top-level commands
-  const thumbCmd = program.command('thumbnails').description('Manage thumbnails');
-  thumbCmd.command('set <video-id> <file>')
-    .description('Set video thumbnail')
-    .action(async (videoId, file) => { /* ... */ });
+  const metaCmd = program.command('metadata').description('Manage item metadata');
+  metaCmd.command('set <item-id> <key> <value>')
+    .description('Set item metadata')
+    .action(async (itemId, key, value) => { /* ... */ });
 }
 ```
 
@@ -206,55 +195,39 @@ export function registerVideoCommands(program: Command) {
 
 | Convention | Example |
 |------------|---------|
-| Top-level commands | `youtube videos search "query"` |
-| Sub-resources as siblings | `youtube thumbnails set <id> <file>` (not `youtube videos thumbnails set`) |
+| Top-level commands | `mycli items search "query"` |
+| Sub-resources as siblings | `mycli metadata set <id> <key> <val>` (not `mycli items metadata set`) |
 | Comma-separated IDs | `--ids "id1,id2,id3"` parsed via `.split(',')` |
 | Pagination | `--page-token <token>` with `nextPageToken` in output |
 | Machine output | `--json` flag on all read commands |
 | Skip confirmations | `--yes` flag on destructive commands |
-| Auth guard | `requireAuth()` at the top of every action |
+| Auth guard | `requireAuth()` at the top of every action (if auth is needed) |
 
 ---
 
 ## Authentication Module (`src/auth.ts`)
 
-The auth module serves dual purposes: a library imported by commands and a standalone script run via `npm run auth`.
+The auth module serves dual purposes: a library imported by commands and a standalone script run via `npm run auth`. Adapt the auth mechanism to your use case — OAuth2, API keys, tokens, etc.
 
 ```typescript
-import { google } from 'googleapis';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import open from 'open';
-import http from 'http';
+import { readFileSync, existsSync } from 'fs';
 
-const CREDENTIALS_PATH = 'youtube-credentials.json';
-const TOKEN_PATH = 'youtube-token.json';
-const SCOPES = [
-  'https://www.googleapis.com/auth/youtube',
-  'https://www.googleapis.com/auth/youtube.force-ssl',
-  'https://www.googleapis.com/auth/youtube.upload',
-  'https://www.googleapis.com/auth/youtubepartner',
-];
+const CREDENTIALS_PATH = 'credentials.json';
+const TOKEN_PATH = 'token.json';
 
-export function getOAuth2Client() {
+export function getClient() {
   const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf-8'));
-  const { client_id, client_secret, redirect_uris } = credentials.installed;
-  const oauth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
   if (existsSync(TOKEN_PATH)) {
     const token = JSON.parse(readFileSync(TOKEN_PATH, 'utf-8'));
-    oauth2Client.setCredentials(token);
+    // Apply token to client
   } else {
-    // Interactive auth flow
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-    });
-    console.log('Authorize this app by visiting:', authUrl);
-    open(authUrl);
-    // Start local server to capture callback, exchange for tokens, save to TOKEN_PATH
+    // Interactive auth flow — adapt to your provider
+    console.log('Run: npm run auth');
+    process.exit(1);
   }
 
-  return oauth2Client;
+  return credentials;
 }
 
 export function isAuthenticated(): boolean {
@@ -276,8 +249,8 @@ export function requireAuth(): void {
 Every action handler follows this exact structure:
 
 ```
-1. requireAuth()           — Guard clause, exits if not authenticated
-2. try { API call }        — Google API call with proper params
+1. requireAuth()           — Guard clause, exits if not authenticated (optional)
+2. try { service call }    — API/service call with proper params
 3. if (opts.json)          — JSON output strategy
 4. else                    — Human-formatted output with chalk
 5. catch (err)             — Error logging with chalk.red, process.exit(1)
@@ -293,9 +266,9 @@ No handler deviates from this pattern. This consistency makes every command pred
 
 ```json
 {
-  "name": "youtube-cli",
+  "name": "my-cli",
   "type": "module",
-  "bin": { "youtube": "./dist/index.js" },
+  "bin": { "mycli": "./dist/index.js" },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -305,10 +278,8 @@ No handler deviates from this pattern. This consistency makes every command pred
   },
   "dependencies": {
     "commander": "^12.0.0",
-    "googleapis": "^144.0.0",
     "chalk": "^5.3.0",
-    "dotenv": "^16.0.0",
-    "open": "^10.1.0"
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
@@ -353,7 +324,7 @@ import { describe, it, expect } from 'vitest';
 describe('CLI smoke tests', () => {
   it('shows help', async () => {
     const { stdout } = await execa('npx', ['tsx', 'src/index.ts', '--help']);
-    expect(stdout).toContain('youtube');
+    expect(stdout).toContain('mycli');
   });
 
   it('shows version', async () => {
@@ -363,7 +334,7 @@ describe('CLI smoke tests', () => {
 });
 ```
 
-**Unit tests** — Mock `googleapis` and `auth`, use `makeProgram()` for isolated Commander instances.
+**Unit tests** — Mock the service client and auth, use `makeProgram()` for isolated Commander instances.
 
 ```typescript
 // tests/helpers.ts
@@ -405,8 +376,8 @@ vi.spyOn(process, 'exit').mockImplementation(((code: number) => {
 |---------|-------|
 | **Command Pattern** | Commander.js nested `command().action()` chains |
 | **Module Registration** | Each file exports `register*Commands(program)` that mutates shared instance |
-| **Factory Function** | `yt()` creates fresh API client per call |
-| **Guard Clause** | `requireAuth()` at top of every handler |
+| **Factory Function** | Client factory creates fresh client per call |
+| **Guard Clause** | `requireAuth()` (or equivalent) at top of every handler |
 | **Strategy (output)** | `--json` switches between human and machine output |
 | **Builder Pattern** | Commander fluent API: `.command().description().option().action()` |
 
@@ -416,27 +387,27 @@ vi.spyOn(process, 'exit').mockImplementation(((code: number) => {
 
 ### 1. Flat command topology
 
-Sub-resources (`thumbnails`, `captions`, `playlist-items`) are registered as **sibling top-level commands**, not nested under parents. This keeps the CLI surface simple and avoids deep nesting that's tedious to type.
+Sub-resources are registered as **sibling top-level commands**, not nested under parents. This keeps the CLI surface simple and avoids deep nesting that's tedious to type.
 
 ### 2. Thin entry point
 
-`index.ts` does nothing but create the program and register modules. No logic, no API calls, no formatting.
+`index.ts` does nothing but create the program and register modules. No logic, no service calls, no formatting.
 
 ### 3. Consistent handler structure
 
-Every handler: auth → try → API → output → catch. No exceptions. This makes code review fast and bugs obvious.
+Every handler: guard → try → service → output → catch. No exceptions. This makes code review fast and bugs obvious.
 
 ### 4. No shared service layer
 
-Each module creates its own API client via `yt()`. No centralized service or repository. The factory is cheap and the API client is lightweight.
+Each module creates its own client via a factory function. No centralized service or repository. The factory is cheap and the client is lightweight.
 
-### 5. No abstraction over the API
+### 5. No abstraction over the service
 
-Command files are thin wrappers around the Google API. They handle parsing, auth, and formatting — nothing more. Don't over-engineer.
+Command files are thin wrappers around the underlying API or service. They handle parsing, auth, and formatting — nothing more. Don't over-engineer.
 
 ### 6. Dual-purpose auth module
 
-`auth.ts` works as both a library (imported by commands) and a standalone script (`npm run auth`). One file, two uses.
+`auth.ts` works as both a library (imported by commands) and a standalone script (`npm run auth`). One file, two uses. Skip entirely if your CLI doesn't need authentication.
 
 ### 7. Promote, don't pre-share
 
@@ -446,7 +417,7 @@ Start everything in the command module that needs it. Extract to a shared utilit
 
 ## What This Is Not
 
-- **Not a dependency injection framework**. Dependencies are imported directly. The `yt()` factory is sufficient.
-- **Not a hierarchical CLI**. Sub-resources are siblings, not nested children. `youtube thumbnails set` not `youtube videos thumbnails set`.
-- **Not a service layer architecture**. Commands call the API directly. No repository, no service, no adapter.
+- **Not a dependency injection framework**. Dependencies are imported directly. A simple factory function is sufficient.
+- **Not a hierarchical CLI**. Sub-resources are siblings, not nested children. `mycli metadata set` not `mycli items metadata set`.
+- **Not a service layer architecture**. Commands call the API or service directly. No repository, no service, no adapter.
 - **Not over-engineered**. The pattern is deliberately simple. Commander + modules + consistent handlers.
