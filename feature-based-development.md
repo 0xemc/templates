@@ -10,6 +10,59 @@ Code is grouped by **what the user can do**, not by what type of file it is. A "
 
 ---
 
+## Architecture Overview
+
+```mermaid
+graph TD
+    subgraph MW["middleware/  ·  request pipeline"]
+        M["withUserData · withGeoBlocking · withSupabaseClient\nassembled in handler.ts"]
+    end
+
+    subgraph APP["application/  ·  entry points"]
+        A["Explore/page.tsx · Products/page.tsx · Users/page.tsx\n(thin composition only — no logic)"]
+    end
+
+    subgraph FEAT["features/  ·  vertical slices"]
+        F1["Bridging/"]
+        F2["Purchase/"]
+        F3["Retire/"]
+        F1 -. "✗  no cross-feature imports" .-> F2
+    end
+
+    subgraph SHARED["shared/  ·  promoted code"]
+        S["ui/  ·  components/  ·  hooks/  ·  utils/  ·  types/  ·  constants/"]
+    end
+
+    MW -->|uses| SHARED
+    APP -->|composes| FEAT
+    APP -->|uses| SHARED
+    FEAT -->|uses| SHARED
+```
+
+### Inside a feature
+
+```
+features/Bridging/
+├── Bridging.constants.ts     ← enums, magic values
+├── Bridging.hooks.ts         ← data-fetching, stateful logic
+├── Bridging.state.ts         ← client state atoms/stores
+├── Bridging.types.ts         ← domain types & interfaces
+├── Bridging.utils.ts         ← pure transformation helpers
+├── api/
+│   └── icr/
+│       ├── authenticate.ts         ← external API call
+│       └── authenticate.types.ts   ← types for that API
+└── components/
+    └── TransferAssetsModal/
+        ├── TransferAssetsModal.tsx        ← component
+        ├── TransferAssetsModal.state.ts   ← local state
+        ├── TransferAssetsModal.styles.ts  ← styles
+        ├── TransferAssetsModal.types.ts   ← component-scoped types
+        └── TransferAssetsModal.actions.ts ← async side-effects
+```
+
+---
+
 ## Top-Level Structure
 
 ```
