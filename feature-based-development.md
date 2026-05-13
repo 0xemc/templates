@@ -13,30 +13,45 @@ Code is grouped by **what the user can do**, not by what type of file it is. A "
 ## Architecture Overview
 
 ```mermaid
-graph TD
-    subgraph MW["middleware/  ·  request pipeline"]
-        M["withUserData · withGeoBlocking · withSupabaseClient\nassembled in handler.ts"]
+flowchart TD
+    subgraph MW["🛡️  middleware  ·  request pipeline"]
+        M["withUserData · withGeoBlocking\nwithSupabaseClient · handler.ts"]
     end
 
-    subgraph APP["application/  ·  entry points"]
-        A["Explore/page.tsx · Products/page.tsx · Users/page.tsx\n(thin composition only — no logic)"]
+    subgraph APP["🖥️  application  ·  entry points"]
+        A["Explore · Products · Users\nthin composition only — no logic"]
     end
 
-    subgraph FEAT["features/  ·  vertical slices"]
-        F1["Bridging/"]
-        F2["Purchase/"]
-        F3["Retire/"]
+    subgraph FEAT["⚡  features  ·  vertical slices"]
+        F1["🧩 Bridging/"]
+        F2["🧩 Purchase/"]
+        F3["🧩 Retire/"]
         F1 -. "✗  no cross-feature imports" .-> F2
     end
 
-    subgraph SHARED["shared/  ·  promoted code"]
-        S["ui/  ·  components/  ·  hooks/  ·  utils/  ·  types/  ·  constants/"]
+    subgraph SHARED["📦  shared  ·  promoted code"]
+        S["ui · components · hooks\nutils · types · constants"]
     end
 
     MW -->|uses| SHARED
     APP -->|composes| FEAT
     APP -->|uses| SHARED
     FEAT -->|uses| SHARED
+
+    style MW fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc
+    style APP fill:#0c1a3d,stroke:#1d4ed8,color:#93c5fd
+    style FEAT fill:#052e16,stroke:#16a34a,color:#86efac
+    style SHARED fill:#431407,stroke:#c2410c,color:#fdba74
+
+    classDef mwNode fill:#312e81,stroke:#6366f1,color:#e0e7ff
+    classDef appNode fill:#1e3a8a,stroke:#3b82f6,color:#dbeafe
+    classDef featNode fill:#14532d,stroke:#22c55e,color:#dcfce7
+    classDef sharedNode fill:#7c2d12,stroke:#ea580c,color:#fed7aa
+
+    class M mwNode
+    class A appNode
+    class F1,F2,F3 featNode
+    class S sharedNode
 ```
 
 ### Inside a feature
