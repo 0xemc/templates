@@ -209,6 +209,15 @@ export function registerResourceACommands(program: Command) {
 
 The auth module serves dual purposes: a library imported by commands and a standalone script run via `npm run auth`. Adapt the auth mechanism to your use case — OAuth2, API keys, tokens, etc.
 
+For OAuth flows that spin up a local callback server, accept a `--port <n>` argument to override the port at runtime, falling back to the port in the credentials file or a hardcoded default:
+
+```typescript
+const portArg = process.argv[process.argv.indexOf('--port') + 1];
+const port = portArg || new URL(redirectUri).port || '9000';
+```
+
+Usage: `npm run auth -- --port 8080`
+
 ```typescript
 import { readFileSync, existsSync } from 'fs';
 
